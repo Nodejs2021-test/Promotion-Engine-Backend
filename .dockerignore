@@ -1,0 +1,15 @@
+# Only pyproject.toml and src/ are needed in the image.
+.venv/
+venv/
+.env
+.env.*
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+tests/
+Dockerfile
+.dockerignore
