@@ -497,8 +497,7 @@ def test_existing_customer_sku_product_conditions():
 
 # --------------------------------------------------------------------------- rule structure validation
 def test_rule_validation():
-    with pytest.raises(ValueError, match="Monthly Promotion needs at least one included item"):
-        RuleIn(name="M", family="MONTHLY_PROMO", action={"action_type": "PERCENTAGE", "value": 10})
+    assert RuleIn(name="M", family="MONTHLY_PROMO", action={"action_type": "PERCENTAGE", "value": 10})
     with pytest.raises(ValueError, match="either a discount percentage or a fixed unit rate"):
         RuleIn(name="T", tiers=[{"position": 1, "min_quantity": 1, "discount_percentage": 10, "fixed_unit_rate": 5}])
     with pytest.raises(ValueError, match="overlaps"):
@@ -520,7 +519,7 @@ def test_rule_validation():
 
 
 # --------------------------------------------------------------------------- completed functionality
-def test_item_role_rate_override_and_role_validation():
+def test_item_role_rate_override_and_no_item_validation():
     r = rule(
         action=Action("PERCENTAGE", D(20)), items=(RuleItem("A"), RuleItem("B", role="RATE_OVERRIDE", rate=D("9.5")))
     )
@@ -529,18 +528,13 @@ def test_item_role_rate_override_and_role_validation():
         [campaign(r)],
     )
     assert [i["finalUnitRate"] for i in res["items"]] == [D("80.000"), D("9.500")]
-    with pytest.raises(ValueError, match="only allowed in a CAP rule"):
-        RuleIn(
-            name="X", action={"action_type": "PERCENTAGE", "value": 10}, items=[{"item_id": "A", "role": "CAP_ITEM"}]
-        )
-    with pytest.raises(ValueError, match="needs its rate"):
-        RuleIn(
-            name="X",
-            action={"action_type": "PERCENTAGE", "value": 10},
-            items=[{"item_id": "A", "role": "RATE_OVERRIDE"}],
-        )
-    with pytest.raises(ValueError, match="rate is only used"):
-        RuleIn(name="X", action={"action_type": "PERCENTAGE", "value": 10}, items=[{"item_id": "A", "rate": 5}])
+    # Selected items carry no validation: any role / rate / empty row is accepted.
+    pct = {"action_type": "PERCENTAGE", "value": 10}
+    assert RuleIn(name="X", action=pct, items=[{"item_id": "A", "role": "CAP_ITEM"}])
+    assert RuleIn(name="X", action=pct, items=[{"item_id": "A", "role": "RATE_OVERRIDE"}])
+    assert RuleIn(name="X", action=pct, items=[{"item_id": "A", "rate": 5}, {}])
+    assert RuleIn(name="C", family="CAP", max_discount_percentage=20)
+    assert RuleIn(name="PL", family="PRICE_LIST")
 
 
 def test_programme_eligibility_records_precedence():

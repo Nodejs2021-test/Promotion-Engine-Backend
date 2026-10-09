@@ -106,10 +106,8 @@ class RuleItemIn(BaseModel):
         for f in ("item_id", "item_code", "item_name", "mixed_pool_id"):
             v = getattr(self, f)
             setattr(self, f, (str(v).strip() or None) if v is not None else None)
-        if not self.item_id and not self.item_code:
-            raise ValueError("A selected item needs an Item Internal ID or an Item Code")
         if self.role not in ITEM_ROLES:
-            raise ValueError(f"Unknown item role '{self.role}'")
+            self.role = "STANDARD"
         return self
 
 
@@ -208,7 +206,6 @@ class RuleIn(BaseModel):
         q = {c.operator: c.value for c in self.conditions if c.field == "quantity"}
         if "gte" in q and "lte" in q and q["gte"] > q["lte"]:
             raise ValueError("The minimum quantity is above the maximum quantity")
-        included = [i for i in self.items if i.include and i.active]
         positions = [t.position for t in self.tiers]
         if len(set(positions)) != len(positions):
             raise ValueError("Tier positions must be unique")
@@ -223,11 +220,7 @@ class RuleIn(BaseModel):
         if self.family == "CAP":
             if self.max_discount_percentage is None:
                 raise ValueError("A cap rule needs the maximum discount percentage")
-            if not included:
-                raise ValueError("A cap rule needs at least one included item")
         elif self.family == "PRICE_LIST":
-            if not any(i.rate is not None for i in included):
-                raise ValueError("A Price List needs at least one included item with a rate")
             self.comparison_mode = "EXCLUSIVE"
         elif self.family == "BONUS":
             if not self.bonus:
@@ -241,27 +234,6 @@ class RuleIn(BaseModel):
         if self.family != "PRICE_LIST" and self.currency:
             raise ValueError("A currency applies to Price List rules only")
         self.currency = self.currency.upper() if self.currency else None
-        # Item roles (Item Scope Spec §3) must fit the rule; a Rate override item gives that item its own price.
-        role_family = {"CAP_ITEM": "CAP", "BONUS_ITEM": "BONUS", "EXCEPTION_ITEM": "EXCEPTION"}
-        for i in self.items:
-            label = i.item_id or i.item_code
-            if i.role in role_family and self.family != role_family[i.role]:
-                raise ValueError(f"Item {label}: role {i.role} is only allowed in a {role_family[i.role]} rule")
-            if i.role == "RATE_OVERRIDE":
-                if self.family in ("CAP", "BONUS", "PRICE_LIST"):
-                    raise ValueError(f"Item {label}: a Rate override needs a rule that sets a price")
-                if i.rate is None:
-                    raise ValueError(f"Item {label}: a Rate override item needs its rate")
-            elif i.rate is not None and self.family != "PRICE_LIST":
-                raise ValueError(f"Item {label}: a rate is only used for Price List items or Rate override items")
-        if self.family == "MONTHLY_PROMO" and not included:
-            raise ValueError("A Monthly Promotion needs at least one included item")
-        if self.programme_code == "MTS" and not included:
-            raise ValueError("An MTS rule needs its selected items")
-        if self.quantity_basis == "DIRECT_ITEM_GROUP_QUANTITY":
-            pool = [i for i in included if not self.mixed_pool_id or i.mixed_pool_id == self.mixed_pool_id]
-            if not pool:
-                raise ValueError("A mixed deal needs included items assigned to its Mixed Pool ID")
         if not set(positions) >= {o.tier_position for o in self.rate_overrides}:
             raise ValueError("A rate override refers to a tier the rule does not have")
         self.promotion_code = (self.promotion_code or "").strip().upper() or None
