@@ -215,13 +215,19 @@ async def list_campaigns(q: str | None, status: str | None) -> list[dict]:
         rx = search_regex(q)
         query["$or"] = [{"name": rx}, {"code": rx}, {"campaign_id": rx}]
     rule_ids: dict[str, set[str]] = {}
-    async for r in db.campaign_rules.find({}, {"campaign_id": 1, "rule_id": 1}):
+    families: dict[str, set[str]] = {}
+    async for r in db.campaign_rules.find({}, {"campaign_id": 1, "rule_id": 1, "family": 1}):
         rule_ids.setdefault(r["campaign_id"], set()).add(r["rule_id"])
+        families.setdefault(r["campaign_id"], set()).add(r.get("family") or "EVERYDAY")
     usage = await _applied_usage(rule_ids)
     docs = [d async for d in db.campaigns.find(query)]
     docs.sort(key=lambda d: (d.get("priority", 0), d["campaign_id"]))
     out = [
-        campaign_out(d, len(rule_ids.get(d["campaign_id"], ())), usage.get(d["campaign_id"], {})) for d in docs
+        {
+            **campaign_out(d, len(rule_ids.get(d["campaign_id"], ())), usage.get(d["campaign_id"], {})),
+            "families": sorted(families.get(d["campaign_id"], ())),
+        }
+        for d in docs
     ]
     return [c for c in out if not status or c["status"] == status]
 
