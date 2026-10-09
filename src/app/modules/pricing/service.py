@@ -9,7 +9,9 @@ from decimal import Decimal
 
 from app.common.utils import serialize, today, utcnow
 from app.core import app_settings
+from app.core.database import get_db
 from app.modules.campaigns.service import load_engine_campaigns
+from app.modules.eligibility.service import load_engine_records
 from app.modules.pricing.conditions import to_bool
 from app.modules.pricing.engine import evaluate_sales_order
 from app.modules.pricing.model import Order, OrderCustomer, OrderLine
@@ -71,9 +73,35 @@ def engine_order(order: NormalisedSalesOrder) -> Order:
     )
 
 
+async def code_usage(campaigns, order: NormalisedSalesOrder) -> list[tuple[str, int, int]]:
+    """(rule id, orders it was applied to, of which this customer's) for limited promotion-code rules; the order
+    being priced and cancelled orders are not counted."""
+    out = []
+    db = get_db()
+    for c in campaigns:
+        for r in c.rules:
+            if r.family == "PROMOTION_CODE" and (r.max_uses_total or r.max_uses_per_customer):
+                query = {
+                    "applied_rule_ids": r.rule_id,
+                    "cancelled": {"$ne": True},
+                    "sales_order_id": {"$ne": order.sales_order.sales_order_id},
+                }
+                total = await db.sales_orders.count_documents(query)
+                mine = await db.sales_orders.count_documents({**query, "customer_id": order.customer.customer_id})
+                out.append((r.rule_id, total, mine))
+    return out
+
+
 async def price(order: NormalisedSalesOrder) -> dict:
     """The pricing result of the order (camelCase, JSON ready). Nothing is stored here."""
-    result = evaluate_sales_order(engine_order(order), await load_engine_campaigns(), app_settings.controlled_values())
+    campaigns = await load_engine_campaigns()
+    result = evaluate_sales_order(
+        engine_order(order),
+        campaigns,
+        app_settings.controlled_values(),
+        eligibility=await load_engine_records(),
+        usage=await code_usage(campaigns, order),
+    )
     return serialize({**result, "evaluatedAt": utcnow().isoformat()})
 
 

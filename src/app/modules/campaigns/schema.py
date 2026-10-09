@@ -183,6 +183,9 @@ class RuleIn(BaseModel):
     rate_overrides: list[RateOverrideIn] = Field(default_factory=list, max_length=200)
     max_discount_percentage: Decimal | None = Field(None, ge=0, le=100)
     bonus: BonusIn | None = None
+    currency: str | None = Field(None, pattern=r"^[A-Za-z]{3}$", description="Price List: currency of the rates")
+    max_uses_total: int | None = Field(None, gt=0, description="Promotion Code: orders the code may be applied to")
+    max_uses_per_customer: int | None = Field(None, gt=0)
     source_type: str | None = Field(None, max_length=40)
     source_reference: str | None = Field(None, max_length=200)
     notes: str | None = Field(None, max_length=2000)
@@ -233,6 +236,24 @@ class RuleIn(BaseModel):
             raise ValueError("Add an outcome: quantity tiers or a single discount")
         if self.family == "PROMOTION_CODE" and not (self.promotion_code or "").strip():
             raise ValueError("A promotion-code rule needs the promotion code")
+        if self.family != "PROMOTION_CODE" and (self.max_uses_total or self.max_uses_per_customer):
+            raise ValueError("Usage limits apply to Promotion Code rules only")
+        if self.family != "PRICE_LIST" and self.currency:
+            raise ValueError("A currency applies to Price List rules only")
+        self.currency = self.currency.upper() if self.currency else None
+        # Item roles (Item Scope Spec §3) must fit the rule; a Rate override item gives that item its own price.
+        role_family = {"CAP_ITEM": "CAP", "BONUS_ITEM": "BONUS", "EXCEPTION_ITEM": "EXCEPTION"}
+        for i in self.items:
+            label = i.item_id or i.item_code
+            if i.role in role_family and self.family != role_family[i.role]:
+                raise ValueError(f"Item {label}: role {i.role} is only allowed in a {role_family[i.role]} rule")
+            if i.role == "RATE_OVERRIDE":
+                if self.family in ("CAP", "BONUS", "PRICE_LIST"):
+                    raise ValueError(f"Item {label}: a Rate override needs a rule that sets a price")
+                if i.rate is None:
+                    raise ValueError(f"Item {label}: a Rate override item needs its rate")
+            elif i.rate is not None and self.family != "PRICE_LIST":
+                raise ValueError(f"Item {label}: a rate is only used for Price List items or Rate override items")
         if self.family == "MONTHLY_PROMO" and not included:
             raise ValueError("A Monthly Promotion needs at least one included item")
         if self.programme_code == "MTS" and not included:

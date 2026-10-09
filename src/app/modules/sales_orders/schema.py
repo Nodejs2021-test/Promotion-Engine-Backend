@@ -4,7 +4,7 @@ External payloads (NetSuite, Dataverse) are converted to this structure by the i
 the application never depends on raw source field names.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -122,3 +122,20 @@ class NormalisedSalesOrder(CamelModel):
         if dupes:
             raise ValueError(f"Duplicate line id(s): {', '.join(dupes)}")
         return lines
+
+
+class CancellationIn(CamelModel):
+    """Cancellation update from the source system (Data Spec §18): marks the order cancelled, keeps all history."""
+
+    sales_order_id: str = Field(min_length=1, max_length=64)
+    source_system: str | None = Field(None, description="NETSUITE, API, …; empty = the latest order with this id")
+    pricing_status: str | None = Field("CANCELLED", description="Must be CANCELLED when sent")
+    latest_pricing_request_id: str | None = None
+    cancelled_at: datetime | None = None
+
+    @field_validator("pricing_status")
+    @classmethod
+    def _cancelled(cls, v: str | None) -> str | None:
+        if v and v.strip().upper() != "CANCELLED":
+            raise ValueError("pricingStatus must be CANCELLED")
+        return v

@@ -44,6 +44,8 @@ async def meta():
         "quantity_bases": _opts(model.QUANTITY_BASES),
         "item_roles": _opts(model.ITEM_ROLES),
         "programmes": _opts(model.PROGRAMMES),
+        "eligibility_scopes": _opts(model.ELIGIBILITY_SCOPES),
+        "eligibility_modes": _opts(model.ELIGIBILITY_MODES),
         "boolean_fields": sorted(model.BOOLEAN_FIELDS),
         "controlled_values": app_settings.controlled_values(),
     }

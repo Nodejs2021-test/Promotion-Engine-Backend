@@ -2,8 +2,9 @@
 
 Within a rule family the most specific audience is checked first (Customer, Banner, Marketing Flag / group, Channel,
 general rule); explicit priority (lower value first: campaign priority, then rule priority) resolves equal
-specificity. The first rule of a family that matches the line is that family's candidate. Families then compete by
-Best Price unless a rule is EXCLUSIVE.
+specificity. Every matching Best Price rule of every family is a candidate and the lowest final price wins,
+regardless of priority or specificity (those only break ties). An Exclusive rule is the only candidate of its
+family (the first one that matches, in this order) and wins outright.
 """
 
 from app.modules.pricing.eligibility import specificity_rank

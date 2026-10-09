@@ -10,6 +10,7 @@ from decimal import Decimal
 from app.modules.pricing.conditions import combine, describe, field_value, is_missing, matches, to_bool
 from app.modules.pricing.model import (
     CUSTOMER_FIELDS,
+    ELIGIBILITY_SCOPES,
     GENERAL_RANK,
     PRODUCT_FIELDS,
     PROGRAMME_FIELD,
@@ -85,18 +86,48 @@ def audience_checks(o: RuleOutcome, order: Order, line: OrderLine, value: Decima
     return _conditions(o, CUSTOMER_FIELDS, order, line, value)
 
 
+def resolve_programme(code: str, order: Order) -> tuple[bool | None, str]:
+    """Effective programme eligibility: the most specific active record (Customer → Customer Group → Banner →
+    Channel), else the flag the order sends, else not eligible when the programme has records (Item Scope Spec
+    §7.4), else unknown (PRICING_CONTEXT_INCOMPLETE)."""
+    c, on = order.customer, order.order_date
+    records = [
+        r
+        for r in order.eligibility_records
+        if r.programme_code == code
+        and (r.valid_from is None or r.valid_from <= on)
+        and (r.valid_to is None or on <= r.valid_to)
+    ]
+    for scope, value in (
+        ("CUSTOMER", c.customer_id),
+        ("CUSTOMER_GROUP", c.customer_group),
+        ("BANNER", c.banner),
+        ("CHANNEL", c.channel),
+    ):
+        if value:
+            key = str(value).strip().casefold()
+            hit = next((r for r in records if r.scope == scope and r.value.strip().casefold() == key), None)
+            if hit:
+                return hit.eligible, f"{ELIGIBILITY_SCOPES[scope]} {value} record"
+    flag = to_bool(getattr(c, PROGRAMME_FIELD[code]))
+    if flag is not None:
+        return flag, "order"
+    if any(r.programme_code == code for r in order.eligibility_records):
+        return False, "no eligibility record for this customer"
+    return None, ""
+
+
 def programme_check(o: RuleOutcome, order: Order) -> bool:
     """Programme participation (Item Scope Spec §5): eligibility permits evaluation, it never creates a result."""
     codes = [o.rule.programme_code] if o.rule.programme_code else []
     if o.rule.family == "MONTHLY_PROMO" and "MONTHLY_PROMO" not in codes:
         codes.append("MONTHLY_PROMO")
     for code in codes:
-        attr = PROGRAMME_FIELD[code]
-        eligible = to_bool(getattr(order.customer, attr))
+        eligible, source = resolve_programme(code, order)
         if eligible is None:
-            o.missing.append(attr)
+            o.missing.append(PROGRAMME_FIELD[code])
             return False
-        o.checks.append(Check(f"Customer is {PROGRAMMES[code]} eligible", eligible))
+        o.checks.append(Check(f"Customer is {PROGRAMMES[code]} eligible ({source})", eligible))
         if not eligible:
             return False
     return True

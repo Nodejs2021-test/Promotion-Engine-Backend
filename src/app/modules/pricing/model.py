@@ -49,6 +49,14 @@ ITEM_ROLES: dict[str, str] = {
     "BONUS_ITEM": "Bonus item",
     "EXCEPTION_ITEM": "Exception item",
 }
+# Programme eligibility records (Item Scope Spec §6-§7): precedence Customer → Customer Group → Banner → Channel.
+ELIGIBILITY_SCOPES: dict[str, str] = {
+    "CUSTOMER": "Customer",
+    "CUSTOMER_GROUP": "Customer Group",
+    "BANNER": "Banner",
+    "CHANNEL": "Channel",
+}
+ELIGIBILITY_MODES: dict[str, str] = {"ELIGIBLE": "Eligible", "NOT_ELIGIBLE": "Not eligible"}
 PROGRAMMES: dict[str, str] = {
     "ACCELERATE": "Accelerate",
     "MTS": "Make the Switch",
@@ -192,6 +200,19 @@ class Bonus:
 
 
 @dataclass(frozen=True)
+class EligibilityRecord:
+    """Whether a customer, group, banner or channel may take part in a programme (not a price)."""
+
+    programme_code: str
+    scope: str  # CUSTOMER, CUSTOMER_GROUP, BANNER, CHANNEL
+    value: str
+    eligible: bool
+    valid_from: date | None = None
+    valid_to: date | None = None
+    eligibility_id: str = ""
+
+
+@dataclass(frozen=True)
 class Rule:
     rule_id: str
     name: str
@@ -216,6 +237,9 @@ class Rule:
     rate_overrides: tuple[RateOverride, ...] = ()
     max_discount_percentage: Decimal | None = None  # CAP family
     bonus: Bonus | None = None
+    currency: str | None = None  # PRICE_LIST: currency of the item rates
+    max_uses_total: int | None = None  # PROMOTION_CODE: orders the code may be applied to
+    max_uses_per_customer: int | None = None
 
 
 @dataclass(frozen=True)
@@ -290,6 +314,10 @@ class Order:
     promotion_code: str | None = None
     order_status: str | None = None
     pricing_status: str | None = None
+    # Context loaded by the pricing service: programme eligibility records and promotion-code usage
+    # ((rule id, orders it was applied to, of which for this customer), ...).
+    eligibility_records: tuple[EligibilityRecord, ...] = ()
+    code_usage: tuple[tuple[str, int, int], ...] = ()
 
 
 @dataclass

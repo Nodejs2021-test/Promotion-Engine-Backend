@@ -10,6 +10,7 @@
 Pure: no database, no clock. The same input always gives the same result.
 """
 
+from dataclasses import replace
 from decimal import Decimal
 
 from app.modules.pricing import discount
@@ -30,6 +31,7 @@ from app.modules.pricing.model import (
     PRICE_LEVEL_TYPES,
     Campaign,
     Check,
+    EligibilityRecord,
     Order,
     OrderLine,
     Rule,
@@ -142,6 +144,15 @@ def evaluate_rule(campaign: Campaign, rule: Rule, order: Order, line: OrderLine,
         o.checks.append(Check(f"Promotion code {rule.promotion_code}", ok))
         if not ok:
             return o
+        used_total, used_customer = next(((t, c) for rid, t, c in order.code_usage if rid == rule.rule_id), (0, 0))
+        for limit, used, label in (
+            (rule.max_uses_total, used_total, "in total"),
+            (rule.max_uses_per_customer, used_customer, "by this customer"),
+        ):
+            if limit:
+                o.checks.append(Check(f"Code used {used} of {limit} times {label}", used < limit))
+                if used >= limit:
+                    return o
     if (
         not programme_check(o, order)
         or not audience_checks(o, order, line, value)
@@ -200,6 +211,9 @@ def _cap_for(campaigns: list[Campaign], order: Order, line: OrderLine, value: De
 def _candidate(o: RuleOutcome, line: OrderLine, reference: Decimal, cap) -> dict:
     rule = o.rule
     rate = discount.tier_rate(rule, o.tier, line, reference) if o.tier else discount.action_rate(rule.action, reference)
+    _, item = item_in_scope(rule.items, line)
+    if item is not None and item.role == "RATE_OVERRIDE" and item.rate is not None:
+        rate = discount.Rate(item.rate, "FIXED_UNIT_RATE", None)  # this item's own rate in the rule (Item Role)
     cand = {
         "family": rule.family,
         "campaign": o.campaign,
@@ -292,6 +306,12 @@ def _price_list(campaigns: list[Campaign], order: Order, line: OrderLine, value:
         if not (date_checks(o, order.order_date) and audience_checks(o, order, line, value)) or not o.matched:
             continue
         _, item = item_in_scope(tuple(i for i in rule.items if i.include), line)
+        if rule.currency and order.currency and rule.currency.upper() != order.currency.upper():
+            return None, _err(
+                "PRICE_LIST_CURRENCY_MISMATCH",
+                f"Price List {rule.rule_id} is in {rule.currency.upper()}, the order in {order.currency.upper()}",
+                priceListId=rule.rule_id,
+            )
         if item is None or item.rate is None:
             return None, _err(
                 "PRICE_LIST_ITEM_NOT_FOUND",
@@ -486,11 +506,14 @@ def price_line(order: Order, line: OrderLine, campaigns: list[Campaign], value: 
                     out["errors"].append({**o.error, "ruleId": rule.rule_id})
                 if o.matched and reference is not None:
                     candidates.append(_candidate(o, line, reference, cap))
-                    break  # most specific / highest-priority rule of this family wins the family
+                    if rule.comparison_mode != "BEST_PRICE":
+                        break  # an Exclusive rule: the most specific / highest-priority match wins the family
+                    # Best Price: keep checking every campaign; the lowest final price wins below.
         out["explanation"]["checkedRules"] = trace
 
     exclusive = [c for c in candidates if c.get("rule") is not None and c["rule"].comparison_mode == "EXCLUSIVE"]
     pool = exclusive or candidates
+    # Lowest final price; on a tie the family order, then the check order (specificity, priority) decides.
     winner = min(pool, key=lambda c: (c["rate"], TIE_ORDER.get(c["family"], 9) if c["family"] != "BASE" else 99))
     final = discount.round_rate(winner["rate"])
     out["explanation"]["candidates"] = [
@@ -561,8 +584,18 @@ def price_line(order: Order, line: OrderLine, campaigns: list[Campaign], value: 
 
 
 def evaluate_sales_order(
-    order: Order, campaigns: list[Campaign], controlled: dict[str, list[str]] | None = None
+    order: Order,
+    campaigns: list[Campaign],
+    controlled: dict[str, list[str]] | None = None,
+    eligibility: list[EligibilityRecord] | None = None,
+    usage: list[tuple[str, int, int]] | None = None,
 ) -> dict:
+    if eligibility is not None or usage is not None:
+        order = replace(
+            order,
+            eligibility_records=tuple(eligibility) if eligibility is not None else order.eligibility_records,
+            code_usage=tuple(usage) if usage is not None else order.code_usage,
+        )
     errors = validate_order(order, controlled or {})
     warnings = []
     if order.customer.price_level_type is None:

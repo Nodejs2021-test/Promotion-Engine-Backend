@@ -107,8 +107,20 @@ async def get_profile(source: str) -> tuple[dict, bool]:
         raise HTTPException(404, f"Unknown integration source {source}")
     doc = await get_db().integration_mappings.find_one({"_id": source})
     if doc:
-        return doc["profile"], True
+        return _with_new_fields(doc["profile"], DEFAULT_PROFILES[source]), True
     return deepcopy(DEFAULT_PROFILES[source]), False
+
+
+def _with_new_fields(profile: dict, default: dict) -> dict:
+    """A saved profile plus any field added to the default since it was saved (so every field stays visible and
+    mappable); the saved paths are never changed."""
+    out = deepcopy(profile)
+    for section in ("order", "customer"):
+        for k, v in default[section].items():
+            out.setdefault(section, {}).setdefault(k, deepcopy(v))
+    for k, v in default["lines"]["fields"].items():
+        out.setdefault("lines", {}).setdefault("fields", {}).setdefault(k, deepcopy(v))
+    return out
 
 
 def check_profile(profile: dict) -> None:

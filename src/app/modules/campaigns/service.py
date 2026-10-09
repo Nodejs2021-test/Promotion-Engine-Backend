@@ -113,6 +113,9 @@ def _rule_model(r: dict) -> model.Rule:
             for o in r.get("rate_overrides") or []
         ),
         max_discount_percentage=_dec(r.get("max_discount_percentage")),
+        currency=r.get("currency"),
+        max_uses_total=r.get("max_uses_total"),
+        max_uses_per_customer=r.get("max_uses_per_customer"),
         bonus=model.Bonus(
             _dec(bonus["buy_quantity"]),
             _dec(bonus["bonus_quantity"]),

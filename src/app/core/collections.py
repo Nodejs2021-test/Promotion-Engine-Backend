@@ -132,6 +132,27 @@ VALIDATORS: dict[str, dict] = {
         },
     ),
     "counters": _schema(["seq"], {"seq": _int}),
+    "programme_eligibility": _schema(
+        ["eligibility_id", "programme_code", "scope", "value", "eligibility_mode", "valid_from", "active"],
+        {
+            "eligibility_id": _str,
+            "programme_code": {"enum": ["ACCELERATE", "MTS", "MONTHLY_PROMO"]},
+            "scope": {"enum": ["CUSTOMER", "CUSTOMER_GROUP", "BANNER", "CHANNEL"]},
+            "value": _str,
+            "eligibility_mode": {"enum": ["ELIGIBLE", "NOT_ELIGIBLE"]},
+            "valid_from": _date,
+            "active": {"bsonType": "bool"},
+        },
+    ),
+    "pricing_transactions": _schema(
+        ["sales_order_id", "source", "kind", "submitted_at"],
+        {
+            "sales_order_id": _str,
+            "source": _str,
+            "kind": {"enum": ["RECEIVED", "REPRICED", "CANCELLED"]},
+            "submitted_at": _date,
+        },
+    ),
     "uploads": _schema(
         ["content_type", "size", "data", "uploaded_by", "uploaded_at"],
         {
@@ -206,6 +227,15 @@ async def ensure_indexes() -> None:
     await db.sales_orders.create_index("customer_id")
     await db.audit_logs.create_index([("entity_type", ASCENDING), ("entity_id", ASCENDING), ("timestamp", DESCENDING)])
     await db.audit_logs.create_index([("timestamp", DESCENDING)])
+    await db.sales_orders.create_index("applied_rule_ids")
+    await db.programme_eligibility.create_index("eligibility_id", unique=True)
+    await db.programme_eligibility.create_index(
+        [("programme_code", ASCENDING), ("scope", ASCENDING), ("value", ASCENDING)]
+    )
+    await db.pricing_transactions.create_index(
+        [("source", ASCENDING), ("sales_order_id", ASCENDING), ("submitted_at", DESCENDING)]
+    )
+    await db.pricing_transactions.create_index("pricing_request_id")
 
 
 async def init_database() -> dict:

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from app.api.dependencies import OrderWriter, Viewer, get_order_principal
 from app.common.pagination import Page, PageSize
 from app.modules.sales_orders import service as so
-from app.modules.sales_orders.schema import NormalisedSalesOrder
+from app.modules.sales_orders.schema import CancellationIn, NormalisedSalesOrder
 
 router = APIRouter(tags=["Sales orders"])
 
@@ -54,5 +54,23 @@ async def get_sales_order(sales_order_id: str, _: Viewer, source: str | None = N
 @router.post(
     "/sales-orders/{sales_order_id}/evaluate", summary="Price a stored sales order again with today's campaigns"
 )
-async def evaluate_stored(sales_order_id: str, _: OrderWriter, source: str | None = None):
-    return await so.evaluate_stored(sales_order_id, source)
+async def evaluate_stored(sales_order_id: str, user: OrderWriter, source: str | None = None):
+    return await so.evaluate_stored(sales_order_id, source, user["username"])
+
+
+@router.post(
+    "/sales-orders/cancel",
+    summary="Cancellation update: mark a sales order cancelled",
+    description=(
+        "`salesOrderId`, optional `sourceSystem`, `pricingStatus` (CANCELLED), `latestPricingRequestId`, "
+        "`cancelledAt`. The order is marked cancelled; its pricing history is kept and it is not priced again. "
+        "Authenticate with `X-API-Key` or a user token."
+    ),
+)
+async def cancel_sales_order(body: CancellationIn, principal: Principal):
+    return await so.cancel(body, principal)
+
+
+@router.get("/sales-orders/{sales_order_id}/pricing-history", summary="Every pricing transaction of a sales order")
+async def pricing_history(sales_order_id: str, _: Viewer, source: str | None = None):
+    return await so.pricing_history(sales_order_id, source)
