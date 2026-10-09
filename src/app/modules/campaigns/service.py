@@ -164,11 +164,35 @@ def rule_out(r: dict, currency: str = "") -> dict:
     }
 
 
-def campaign_out(doc: dict, rule_count: int | None = None) -> dict:
+def campaign_out(doc: dict, rule_count: int | None = None, usage: dict | None = None) -> dict:
     out = serialize(doc)
     out["status"] = effective_status(doc)
     if rule_count is not None:
         out["rule_count"] = rule_count
+    if usage is not None:
+        out["applied_rule_count"] = usage.get("rules", 0)
+        out["applied_order_count"] = usage.get("orders", 0)
+    return out
+
+
+async def _applied_usage(rule_ids: dict[str, set[str]]) -> dict[str, dict]:
+    """Per campaign, from the stored pricing result of every non-cancelled sales order: how many of its existing
+    rules won at least one line, and on how many sales orders."""
+    pipeline = [
+        {"$match": {"cancelled": {"$ne": True}, "pricing.items": {"$exists": True}}},
+        {"$unwind": "$pricing.items"},
+        {"$match": {"pricing.items.campaignId": {"$ne": None}, "pricing.items.ruleId": {"$ne": None}}},
+        {
+            "$group": {
+                "_id": "$pricing.items.campaignId",
+                "rules": {"$addToSet": "$pricing.items.ruleId"},
+                "orders": {"$addToSet": "$_id"},
+            }
+        },
+    ]
+    out: dict[str, dict] = {}
+    async for d in await get_db().sales_orders.aggregate(pipeline):
+        out[d["_id"]] = {"rules": len(set(d["rules"]) & rule_ids.get(d["_id"], set())), "orders": len(d["orders"])}
     return out
 
 
@@ -190,13 +214,15 @@ async def list_campaigns(q: str | None, status: str | None) -> list[dict]:
     if q:
         rx = search_regex(q)
         query["$or"] = [{"name": rx}, {"code": rx}, {"campaign_id": rx}]
-    counts = {
-        d["_id"]: d["n"]
-        async for d in await db.campaign_rules.aggregate([{"$group": {"_id": "$campaign_id", "n": {"$sum": 1}}}])
-    }
+    rule_ids: dict[str, set[str]] = {}
+    async for r in db.campaign_rules.find({}, {"campaign_id": 1, "rule_id": 1}):
+        rule_ids.setdefault(r["campaign_id"], set()).add(r["rule_id"])
+    usage = await _applied_usage(rule_ids)
     docs = [d async for d in db.campaigns.find(query)]
     docs.sort(key=lambda d: (d.get("priority", 0), d["campaign_id"]))
-    out = [campaign_out(d, counts.get(d["campaign_id"], 0)) for d in docs]
+    out = [
+        campaign_out(d, len(rule_ids.get(d["campaign_id"], ())), usage.get(d["campaign_id"], {})) for d in docs
+    ]
     return [c for c in out if not status or c["status"] == status]
 
 

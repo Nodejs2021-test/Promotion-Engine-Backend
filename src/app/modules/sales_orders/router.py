@@ -38,10 +38,11 @@ async def list_sales_orders(
     channel: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    campaign_id: str | None = None,
     page: Page = 1,
     page_size: PageSize = 25,
 ):
-    return await so.list_sales_orders(q, status, channel, date_from, date_to, page, page_size)
+    return await so.list_sales_orders(q, status, channel, date_from, date_to, page, page_size, campaign_id)
 
 
 @router.get(

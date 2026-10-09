@@ -250,9 +250,14 @@ _LIST_FIELDS = {
 }
 
 
-async def list_sales_orders(q, status, channel, date_from, date_to, page: int, page_size: int) -> dict:
+async def list_sales_orders(
+    q, status, channel, date_from, date_to, page: int, page_size: int, campaign_id: str | None = None
+) -> dict:
     db = get_db()
     conds = []
+    if campaign_id:
+        # Same definition as the campaign list's order count: not cancelled, a line priced by the campaign.
+        conds += [{"pricing.items.campaignId": campaign_id}, {"cancelled": {"$ne": True}}]
     if q:
         rx = search_regex(q)
         conds.append({"$or": [{"sales_order_id": rx}, {"customer_id": rx}, {"customer_name": rx}]})
