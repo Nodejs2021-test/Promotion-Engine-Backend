@@ -18,4 +18,4 @@ USER appuser
 EXPOSE 8000
 
 # Configuration comes from environment variables (PE_MONGO_URI, PE_JWT_SECRET, FRONTEND_URL, ...), not a .env file.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000} --proxy-headers --forwarded-allow-ips='*'"]
