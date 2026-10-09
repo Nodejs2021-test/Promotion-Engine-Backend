@@ -393,6 +393,7 @@ def _line_shell(line: OrderLine) -> dict:
         "campaignName": None,
         "ruleId": None,
         "ruleName": None,
+        "promotionCode": None,
         "appliedRuleVersion": None,
         "appliedTierId": None,
         "tierPosition": None,
@@ -558,6 +559,8 @@ def price_line(order: Order, line: OrderLine, campaigns: list[Campaign], value: 
             campaignName=winner["campaign"].name,
             ruleId=rule.rule_id,
             ruleName=rule.name,
+            # The coupon / promotion code that priced this line (Promotion Code rules only).
+            promotionCode=(rule.promotion_code or order.promotion_code) if winner["family"] == "PROMOTION_CODE" else None,
             appliedRuleVersion=rule.version,
             appliedTierId=(tier.tier_id or f"{rule.rule_id}-T{tier.position}") if tier else None,
             tierPosition=tier.position if tier else None,

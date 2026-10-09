@@ -437,6 +437,9 @@ def test_promotion_code_only_with_matching_code():
         "85.000"
     )
     assert item(price([line(wholesale_price=D(100))], [campaign(code)]))["finalUnitRate"] == D("100.000")
+    # The line carries the code that priced it; lines priced otherwise carry none.
+    assert item(price([line(wholesale_price=D(100))], [campaign(code)], promotion_code="spring"))["promotionCode"] == "SPRING"
+    assert item(price([line(wholesale_price=D(100))], [campaign(code)]))["promotionCode"] is None
 
 
 # --------------------------------------------------------------------------- validation (§19)
